@@ -113,7 +113,13 @@
     if (!c) return;
 
     cleanupSubscriptions();
+    if (appointmentsChart) { appointmentsChart.destroy(); appointmentsChart = null; }
     currentContact = null;
+
+    // Reset chart state
+    u.byId('chartLoading').classList.remove('hidden');
+    u.byId('chartContainer').classList.add('hidden');
+    u.byId('chartEmpty').classList.add('hidden');
 
     // Switch views
     u.byId('searchView').classList.add('hidden');
@@ -163,6 +169,7 @@
 
   function backToSearch() {
     cleanupSubscriptions();
+    if (appointmentsChart) { appointmentsChart.destroy(); appointmentsChart = null; }
     currentContact = null;
     u.byId('detailView').classList.add('hidden');
     u.byId('searchView').classList.remove('hidden');
@@ -387,6 +394,8 @@
 
   // ── Load Related Data ─────────────────────────────────────────
 
+  var appointmentsChart = null;
+
   function loadAppointments(contactId) {
     var container = u.byId('appointmentsList');
     container.innerHTML = '<p class="text-sm text-gray-400 py-4">Loading appointments...</p>';
@@ -396,7 +405,7 @@
       .query()
       .select(MODELS.Appointment.fields)
       .where('patient_id', '=', contactId)
-      .limit(50)
+      .limit(200)
       .fetchAllRecords()
       .pipe(window.toMainInstance(true))
       .toPromise()
@@ -404,6 +413,8 @@
         var items = records ? Object.values(records) : [];
         if (items.length === 0) {
           container.innerHTML = '<p class="text-sm text-gray-400 py-4 text-center">No appointments found</p>';
+          u.byId('chartLoading').classList.add('hidden');
+          u.byId('chartEmpty').classList.remove('hidden');
           return;
         }
         // Sort by appointment_time descending
@@ -421,10 +432,134 @@
             '</div>';
         }).join('');
         u.byId('appointmentsCount').textContent = '(' + items.length + ')';
+
+        // Render chart
+        renderAppointmentsChart(items);
       })
       .catch(function (err) {
         container.innerHTML = '<p class="text-sm text-red-500 py-4">Failed to load: ' + u.escapeHtml(err.message) + '</p>';
+        u.byId('chartLoading').classList.add('hidden');
+        u.byId('chartEmpty').classList.remove('hidden');
       });
+  }
+
+  function renderAppointmentsChart(appointments) {
+    u.byId('chartLoading').classList.add('hidden');
+
+    // Filter to appointments with a valid time
+    var valid = appointments.filter(function (a) { return a.appointment_time; });
+    if (valid.length === 0) {
+      u.byId('chartEmpty').classList.remove('hidden');
+      return;
+    }
+
+    // Group by ISO week (Mon–Sun)
+    var weekData = {};
+    valid.forEach(function (a) {
+      var d = new Date(a.appointment_time * 1000);
+      var weekStart = getWeekStart(d);
+      var key = weekStart.toISOString().slice(0, 10);
+      if (!weekData[key]) {
+        weekData[key] = { count: 0, revenue: 0 };
+      }
+      weekData[key].count += 1;
+      weekData[key].revenue += parseFloat(a.total_retail_revenue) || 0;
+    });
+
+    // Sort weeks chronologically
+    var weeks = Object.keys(weekData).sort();
+    var labels = weeks.map(function (w) {
+      var d = new Date(w + 'T00:00:00');
+      return d.toLocaleDateString('en-AU', { day: 'numeric', month: 'short' });
+    });
+    var counts = weeks.map(function (w) { return weekData[w].count; });
+    var revenues = weeks.map(function (w) { return weekData[w].revenue; });
+
+    // Destroy old chart if exists
+    if (appointmentsChart) {
+      appointmentsChart.destroy();
+    }
+
+    u.byId('chartContainer').classList.remove('hidden');
+    var ctx = u.byId('appointmentsChart').getContext('2d');
+
+    appointmentsChart = new Chart(ctx, {
+      type: 'bar',
+      data: {
+        labels: labels,
+        datasets: [
+          {
+            label: 'Appointments',
+            data: counts,
+            backgroundColor: 'rgba(59, 130, 246, 0.7)',
+            borderColor: 'rgb(59, 130, 246)',
+            borderWidth: 1,
+            yAxisID: 'y',
+            order: 2,
+          },
+          {
+            label: 'Revenue ($)',
+            data: revenues,
+            type: 'line',
+            borderColor: 'rgb(16, 185, 129)',
+            backgroundColor: 'rgba(16, 185, 129, 0.1)',
+            borderWidth: 2,
+            pointRadius: 3,
+            pointBackgroundColor: 'rgb(16, 185, 129)',
+            fill: true,
+            yAxisID: 'y1',
+            order: 1,
+          },
+        ],
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        interaction: { mode: 'index', intersect: false },
+        plugins: {
+          legend: { position: 'top', labels: { usePointStyle: true, padding: 16 } },
+          tooltip: {
+            callbacks: {
+              label: function (ctx) {
+                if (ctx.dataset.yAxisID === 'y1') {
+                  return ctx.dataset.label + ': $' + ctx.parsed.y.toFixed(2);
+                }
+                return ctx.dataset.label + ': ' + ctx.parsed.y;
+              },
+            },
+          },
+        },
+        scales: {
+          y: {
+            type: 'linear',
+            position: 'left',
+            title: { display: true, text: 'Appointments', color: 'rgb(59, 130, 246)' },
+            ticks: { precision: 0 },
+            beginAtZero: true,
+          },
+          y1: {
+            type: 'linear',
+            position: 'right',
+            title: { display: true, text: 'Revenue ($)', color: 'rgb(16, 185, 129)' },
+            beginAtZero: true,
+            grid: { drawOnChartArea: false },
+            ticks: {
+              callback: function (val) { return '$' + val.toLocaleString(); },
+            },
+          },
+        },
+      },
+    });
+  }
+
+  /** Get Monday of the week for a given date */
+  function getWeekStart(date) {
+    var d = new Date(date);
+    var day = d.getDay();
+    var diff = d.getDate() - day + (day === 0 ? -6 : 1); // Monday
+    d.setDate(diff);
+    d.setHours(0, 0, 0, 0);
+    return d;
   }
 
   function loadScripts(contactId) {

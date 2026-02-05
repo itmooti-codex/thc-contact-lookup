@@ -218,6 +218,16 @@
           </div>
         </div>
 
+        <!-- Appointments Chart -->
+        <div class="bg-white rounded-lg border border-gray-200 p-4 mb-8">
+          <h3 class="text-sm font-semibold text-gray-900 mb-3 uppercase tracking-wider">Appointments & Revenue by Week</h3>
+          <div id="chartLoading" class="text-sm text-gray-400 py-8 text-center">Loading chart data...</div>
+          <div id="chartContainer" class="hidden" style="position:relative;height:300px;">
+            <canvas id="appointmentsChart"></canvas>
+          </div>
+          <div id="chartEmpty" class="hidden text-sm text-gray-400 py-8 text-center">No appointment data to chart</div>
+        </div>
+
         <!-- Related data sections -->
         <div class="space-y-4">
 
