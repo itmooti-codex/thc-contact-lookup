@@ -478,31 +478,26 @@
   function renderAppointmentsChart(appointments) {
     u.byId('chartLoading').classList.add('hidden');
 
-    // Filter: completed appointments for count, paid for revenue
-    var completed = appointments.filter(function (a) { return a.appointment_time && a.status === 'Completed'; });
-    var paid = appointments.filter(function (a) { return a.appointment_time && a.status === 'Paid'; });
-    if (completed.length === 0 && paid.length === 0) {
+    // Filter to appointments with a valid time
+    var valid = appointments.filter(function (a) { return a.appointment_time; });
+    if (valid.length === 0) {
       u.byId('chartEmpty').classList.remove('hidden');
       return;
     }
 
     // Group by ISO week (Mon–Sun)
+    // Appointments count: only 'Completed' status
+    // Revenue: all appointments (unfiltered)
     var weekData = {};
-    completed.forEach(function (a) {
+    valid.forEach(function (a) {
       var d = new Date(a.appointment_time * 1000);
       var weekStart = getWeekStart(d);
       var key = weekStart.toISOString().slice(0, 10);
       if (!weekData[key]) {
         weekData[key] = { count: 0, revenue: 0 };
       }
-      weekData[key].count += 1;
-    });
-    paid.forEach(function (a) {
-      var d = new Date(a.appointment_time * 1000);
-      var weekStart = getWeekStart(d);
-      var key = weekStart.toISOString().slice(0, 10);
-      if (!weekData[key]) {
-        weekData[key] = { count: 0, revenue: 0 };
+      if (a.status === 'Completed') {
+        weekData[key].count += 1;
       }
       weekData[key].revenue += parseFloat(a.total_retail_revenue) || 0;
     });
