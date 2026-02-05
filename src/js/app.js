@@ -239,10 +239,14 @@
 
     // Application card
     u.byId('cardApplication').innerHTML =
-      detailRow('Status', statusBadge(c.application_status)) +
+      detailRow('Status', appStatusBadge(c.application_status)) +
       detailRow('Treatment Plan', statusBadge(c.treatment_plan, 'blue')) +
+      detailRow('Cannabis Eligibility', statusBadge(c.cannabis_outcome, c.cannabis_outcome === 'Eligible' ? 'green' : 'red')) +
       detailRow('Date Applied', u.formatDate(c.application_date)) +
-      detailRow('Cannabis Eligibility', statusBadge(c.cannabis_outcome, c.cannabis_outcome === 'Eligible' ? 'green' : 'red'));
+      detailRow('Terms Signed', c.terms_conditions ? boolBadge(true, 'Yes') : boolBadge(false, 'No')) +
+      detailRow('Tobacco Smoker', c.tobacco_smoker || 'N/A') +
+      detailRow('Using Other Clinic', c.using_other_clinic || 'N/A') +
+      detailRow('Previous Cannabis Use', c.prev_cannabis_use ? 'Yes' : 'No');
 
     // Contact card
     var phoneHtml = c.sms_number ? '<a href="tel:' + c.sms_number + '" class="text-blue-600 hover:underline">' + u.escapeHtml(c.sms_number) + '</a>' : 'N/A';
@@ -258,19 +262,110 @@
     u.byId('cardAddress').innerHTML =
       detailRow('Address', mapsUrl ? '<a href="' + mapsUrl + '" target="_blank" class="text-blue-600 hover:underline">' + u.escapeHtml(fullAddress) + ' &#8599;</a>' : 'N/A');
 
-    // Medical card
+    // Contraindications card
+    var contraindications = [
+      { key: 'i_have_an_allergy_to_cannabinoids', label: 'Allergy to cannabinoids' },
+      { key: 'i_suffer_from_chronic_liver_disease', label: 'Chronic liver disease' },
+      { key: 'i_am_currently_pregnant_or_breastfeeding', label: 'Pregnant or breastfeeding' },
+      { key: 'i_have_a_history_of_suicidal_ideations_and_or_self_harm', label: 'History of suicidal ideation / self-harm' },
+      { key: 'i_have_a_history_of_schizophrenia_bipolar_and_or_psychosis', label: 'History of schizophrenia / bipolar / psychosis' },
+      { key: 'history_of_opioid_replacement_therapy_and_or_drug_dependency', label: 'Opioid replacement / drug dependency' },
+    ];
+    var activeContras = contraindications.filter(function (ci) { return c[ci.key]; });
+    if (c.none_of_these_apply_to_me || activeContras.length === 0) {
+      u.byId('cardContraindications').innerHTML =
+        '<div class="flex items-center gap-2 py-2"><span class="inline-block w-2 h-2 rounded-full bg-green-500"></span><span class="text-sm text-green-700">No contraindications reported</span></div>';
+    } else {
+      u.byId('cardContraindications').innerHTML = activeContras.map(function (ci) {
+        return '<div class="flex items-center gap-2 py-1.5 border-b border-gray-100 last:border-0">' +
+          '<span class="inline-block w-2 h-2 rounded-full bg-red-500 flex-shrink-0"></span>' +
+          '<span class="text-sm text-red-700">' + ci.label + '</span></div>';
+      }).join('');
+    }
+
+    // Existing conditions card
+    var conditions = [
+      { key: 'adhd', label: 'ADHD' }, { key: 'ptsd', label: 'PTSD' },
+      { key: 'cancer', label: 'Cancer' }, { key: 'epilepsy', label: 'Epilepsy' },
+      { key: 'glaucoma', label: 'Glaucoma' }, { key: 'arthritis', label: 'Arthritis' },
+      { key: 'headaches', label: 'Headaches' }, { key: 'migraines', label: 'Migraines' },
+      { key: 'depression', label: 'Depression' }, { key: 'fibromyalgia', label: 'Fibromyalgia' },
+      { key: 'inflammation', label: 'Inflammation' }, { key: 'endometriosis', label: 'Endometriosis' },
+      { key: 'sleep_disorder', label: 'Sleep Disorder' }, { key: 'chronic_illness', label: 'Chronic Illness' },
+      { key: 'palliative_care', label: 'Palliative Care' }, { key: 'anxiety_disorder', label: 'Anxiety Disorder' },
+      { key: 'loss_of_appetite', label: 'Loss of Appetite' }, { key: 'neuropathic_pain', label: 'Neuropathic Pain' },
+      { key: 'multiple_sclerosis', label: 'Multiple Sclerosis' }, { key: 'parkinson_s_disease', label: "Parkinson's Disease" },
+      { key: 'chronic_non_cancer_pain', label: 'Chronic Non-Cancer Pain' },
+      { key: 'autism_spectrum_disorder', label: 'Autism Spectrum Disorder' },
+      { key: 'crohns_ulcerative_colitis_ibs_gut', label: "Crohn's / Colitis / IBS" },
+      { key: 'chemotherapy_induced_nausea_and_vomiting', label: 'Chemo-Induced Nausea/Vomiting' },
+    ];
+    var activeConditions = conditions.filter(function (cd) { return c[cd.key]; });
+    var conditionsHtml = '';
+    if (activeConditions.length > 0) {
+      conditionsHtml = '<div class="flex flex-wrap gap-1.5 mb-2">' +
+        activeConditions.map(function (cd) {
+          return '<span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-purple-100 text-purple-800">' + cd.label + '</span>';
+        }).join('') + '</div>';
+    } else {
+      conditionsHtml = '<p class="text-sm text-gray-400 py-1">None reported</p>';
+    }
+    if (c.other_condition) {
+      conditionsHtml += detailRow('Other', u.escapeHtml(c.other_condition));
+    }
+    if (c.allergies_information) {
+      conditionsHtml += detailRow('Allergies', u.escapeHtml(c.allergies_information));
+    }
+    u.byId('cardConditions').innerHTML = conditionsHtml;
+
+    // Medications card
+    var medsHtml = detailRow('Taking Medications?', c.are_you_currently_taking_any_medications_or_supplements || 'N/A');
+    if (c.list_your_medications_supplements) {
+      medsHtml += longTextRow('Current Medications', c.list_your_medications_supplements);
+    }
+    if (c.what_is_working_for_you) {
+      medsHtml += longTextRow("What's Working", c.what_is_working_for_you);
+    }
+    if (c.why_regular_medicine_isn_t_working) {
+      medsHtml += longTextRow("Why Regular Medicine Isn't Working", c.why_regular_medicine_isn_t_working);
+    }
+    u.byId('cardMedications').innerHTML = medsHtml;
+
+    // Medical IDs card
     u.byId('cardMedical').innerHTML =
       detailRow('Medicare', c.medicare_number || 'N/A') +
+      detailRow('Medicare Name', c.medicare_name || 'N/A') +
+      detailRow('IRN', c.irn || 'N/A') +
       detailRow('IHI', c.ihi_number || 'N/A') +
-      detailRow('Allergies', c.allergies_information || 'None recorded') +
+      detailRow('Veteran Card', c.veteran_healthcare_card_holder ? boolBadge(true, 'Yes') : 'No') +
       detailRow('Pharmacy', c.pharmacy_name || 'N/A') +
       detailRow('Flower Limit', (c.monthly_cannabis_dispense_limit || '—') + 'g/month') +
-      detailRow('Flower Available', (c.flower_gms_available || '—') + 'g');
+      detailRow('Flower Available', (c.flower_gms_available || '—') + 'g') +
+      (c.flower_limit_reached ? detailRow('Limit Reached', boolBadge(true, 'YES', 'red')) : '');
+
+    // AI / Nurse Evaluation card
+    var aiHtml = detailRow('Cannabis Outcome', statusBadge(c.cannabis_outcome, c.cannabis_outcome === 'Eligible' ? 'green' : c.cannabis_outcome === 'Ineligible' ? 'red' : '')) +
+      detailRow('AI Consultation', c.ai_consultation ? boolBadge(true, 'Complete') : 'Not done') +
+      detailRow('Consultation Date', u.formatDate(c.date_ai_consulation));
+    if (c.ai_notes) {
+      aiHtml += longTextRow('AI Notes', c.ai_notes);
+    }
+    u.byId('cardAI').innerHTML = aiHtml;
+
+    // Eligibility Quiz card
+    var quizHtml = '';
+    if (c.treatment_outcome) quizHtml += longTextRow('Treatment Outcome', c.treatment_outcome);
+    if (c.previous_treatment) quizHtml += longTextRow('Previous Treatment', c.previous_treatment);
+    if (c.long_term_condition) quizHtml += longTextRow('Long Term Condition', c.long_term_condition);
+    if (c.mental_health_history) quizHtml += longTextRow('Mental Health History', c.mental_health_history);
+    if (c.pregnancy_or_fertility) quizHtml += longTextRow('Pregnancy / Fertility', c.pregnancy_or_fertility);
+    u.byId('cardQuiz').innerHTML = quizHtml || '<p class="text-sm text-gray-400 py-1">No quiz data</p>';
 
     // Scripts summary
     u.byId('cardScripts').innerHTML =
       detailRow('Open Scripts', c.scripts_open || '0') +
       detailRow('Fulfilled', c.scripts_fulfilled || '0') +
+      detailRow('Archived', c.scripts_archived || '0') +
       detailRow('First Script', u.formatDate(c.date_first_script)) +
       detailRow('Last Script', u.formatDate(c.date_last_script));
 
@@ -529,6 +624,39 @@
     if (s.includes('new') || s.includes('quiz') || s.includes('intake') || s.includes('pending'))
       return 'bg-blue-100 text-blue-800';
     return 'bg-gray-100 text-gray-800';
+  }
+
+  // Application status with specific color mapping
+  var APP_STATUS_COLORS = {
+    'New': 'bg-blue-100 text-blue-800',
+    'Quiz Success': 'bg-blue-100 text-blue-800',
+    'Intake Form Completed': 'bg-yellow-100 text-yellow-800',
+    'Initial Consultation Booked': 'bg-yellow-100 text-yellow-800',
+    'Initial Consultation Paid': 'bg-green-100 text-green-800',
+    'External Processing $99': 'bg-yellow-100 text-yellow-800',
+    'Item Purchased': 'bg-green-100 text-green-800',
+    'Script Uploaded': 'bg-green-100 text-green-800',
+    'Cancelled': 'bg-red-100 text-red-800',
+    'Suspended': 'bg-red-100 text-red-800',
+  };
+
+  function appStatusBadge(status) {
+    if (!status) return '<span class="text-xs text-gray-400">—</span>';
+    var colors = APP_STATUS_COLORS[status] || 'bg-gray-100 text-gray-800';
+    return '<span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ' + colors + '">' + u.escapeHtml(status) + '</span>';
+  }
+
+  function boolBadge(val, label, color) {
+    var c = color === 'red' ? 'bg-red-100 text-red-800' : 'bg-green-100 text-green-800';
+    if (!val) c = 'bg-gray-100 text-gray-800';
+    return '<span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ' + c + '">' + (label || (val ? 'Yes' : 'No')) + '</span>';
+  }
+
+  function longTextRow(label, text) {
+    return '<div class="py-1.5 border-b border-gray-100 last:border-0">' +
+      '<span class="text-sm text-gray-500 block mb-0.5">' + label + '</span>' +
+      '<p class="text-sm text-gray-900 whitespace-pre-line">' + u.escapeHtml(text) + '</p>' +
+      '</div>';
   }
 
   function scriptStatusBadge(status) { return statusBadge(status); }
