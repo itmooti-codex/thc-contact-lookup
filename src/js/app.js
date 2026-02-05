@@ -657,26 +657,60 @@
           container.innerHTML = '<p class="text-sm text-gray-400 py-4 text-center">No purchases found</p>';
           return;
         }
-        items.sort(function (a, b) { return (b.created_at || 0) - (a.created_at || 0); });
-        container.innerHTML = items.map(function (p) {
-          return '<div class="flex items-center justify-between py-3 border-b border-gray-100 last:border-0">' +
-            '<div>' +
-            '<div class="text-sm font-medium text-gray-900">' + u.escapeHtml(p.name || 'Purchase #' + p.id) + '</div>' +
-            '<div class="text-xs text-gray-500">' + u.formatDate(p.created_at) +
-            (p.quantity > 1 ? ' &middot; Qty: ' + p.quantity : '') +
-            '</div>' +
-            '</div>' +
-            '<div class="flex items-center gap-3">' +
-            '<span class="text-sm font-semibold text-gray-900">' + u.formatCurrency(p.total_purchase || p.price) + '</span>' +
-            purchaseStatusBadge(p.status) +
-            '</div>' +
-            '</div>';
-        }).join('');
-        u.byId('purchasesCount').textContent = '(' + items.length + ')';
 
-        // Total revenue
-        var total = items.reduce(function (sum, p) { return sum + (p.total_purchase || p.price || 0); }, 0);
-        u.byId('purchasesTotal').textContent = 'Total: ' + u.formatCurrency(total);
+        // Collect unique product IDs to resolve internal names
+        var productIds = [];
+        items.forEach(function (p) {
+          if (p.product_id && productIds.indexOf(p.product_id) === -1) {
+            productIds.push(p.product_id);
+          }
+        });
+
+        // Fetch product internal names, then render
+        var productNamePromise = productIds.length > 0
+          ? plugin
+              .switchTo(MODELS.Product.sdkName)
+              .query()
+              .select(['id', 'internal_name', 'public_name'])
+              .where('id', 'in', productIds)
+              .fetchAllRecords()
+              .pipe(window.toMainInstance(true))
+              .toPromise()
+          : Promise.resolve(null);
+
+        return productNamePromise.then(function (productRecords) {
+          // Build product ID → internal name map
+          var productNames = {};
+          if (productRecords) {
+            Object.values(productRecords).forEach(function (prod) {
+              productNames[prod.id] = prod.internal_name || prod.public_name || '';
+            });
+          }
+
+          items.sort(function (a, b) { return (b.created_at || 0) - (a.created_at || 0); });
+          container.innerHTML = items.map(function (p) {
+            var displayName = (p.product_id && productNames[p.product_id]) || p.name || 'Purchase #' + p.id;
+            return '<div class="flex items-center justify-between py-3 border-b border-gray-100 last:border-0">' +
+              '<div>' +
+              '<div class="text-sm font-medium text-gray-900">' + u.escapeHtml(displayName) + '</div>' +
+              '<div class="text-xs text-gray-500">' + u.formatDate(p.created_at) +
+              (p.quantity > 1 ? ' &middot; Qty: ' + p.quantity : '') +
+              '</div>' +
+              '</div>' +
+              '<div class="flex items-center gap-3">' +
+              '<span class="text-sm font-semibold text-gray-900">' + u.formatCurrency(p.total_purchase || p.price) + '</span>' +
+              purchaseStatusBadge(p.status) +
+              '</div>' +
+              '</div>';
+          }).join('');
+          u.byId('purchasesCount').textContent = '(' + items.length + ')';
+
+          // Total revenue — only include Paid purchases
+          var total = items.reduce(function (sum, p) {
+            return p.status === 'Paid' ? sum + (p.total_purchase || p.price || 0) : sum;
+          }, 0);
+          u.byId('purchasesTotal').textContent = 'Total (Paid): ' + u.formatCurrency(total);
+        });
       })
       .catch(function (err) {
         container.innerHTML = '<p class="text-sm text-red-500 py-4">Failed to load: ' + u.escapeHtml(err.message) + '</p>';
