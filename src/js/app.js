@@ -223,6 +223,9 @@
         renderContactDetail(currentContact);
         closeEditModal();
         u.showToast('Contact saved', 'success');
+        // Re-establish subscription — mutation can disrupt the active subscription
+        cleanupSubscriptions();
+        subscribeToContact(currentContact.id);
       })
       .catch(function (err) {
         u.showToast('Save failed: ' + err.message, 'error');
