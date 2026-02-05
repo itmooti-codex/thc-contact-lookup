@@ -31,6 +31,7 @@
         u.byId('searchInput').addEventListener('keypress', function (e) {
           if (e.key === 'Enter') searchContacts();
         });
+        u.byId('resetBtn').addEventListener('click', resetSearch);
 
         // Load dashboard chart (all appointments)
         loadDashboardChart();
@@ -84,7 +85,18 @@
       .finally(function () {
         btn.disabled = false;
         btn.textContent = 'Search';
+        u.byId('resetBtn').classList.remove('hidden');
       });
+  }
+
+  function resetSearch() {
+    u.byId('searchInput').value = '';
+    u.byId('resultCount').textContent = '';
+    u.byId('resultsTable').classList.add('hidden');
+    u.byId('noResults').classList.add('hidden');
+    u.byId('resetBtn').classList.add('hidden');
+    contacts = [];
+    u.byId('searchInput').focus();
   }
 
   function renderResults(list) {
@@ -732,11 +744,24 @@
         } else if (payload && payload.records) {
           var record = Object.values(payload.records)[0];
           updatedData = record && record.getState ? record.getState() : record;
+        } else if (payload && typeof payload === 'object' && payload.id) {
+          updatedData = payload.getState ? payload.getState() : payload;
         }
         if (updatedData && updatedData.id) {
-          currentContact = Object.assign({}, currentContact, updatedData);
+          console.log('Contact updated via subscription:', updatedData);
+          // Only merge fields that have defined, non-null values —
+          // subscription payloads may contain undefined for unchanged fields
+          var merged = Object.assign({}, currentContact);
+          Object.keys(updatedData).forEach(function (key) {
+            if (updatedData[key] !== undefined && updatedData[key] !== null) {
+              merged[key] = updatedData[key];
+            }
+          });
+          currentContact = merged;
           renderContactDetail(currentContact);
           u.showToast('Contact updated', 'info', 2000);
+        } else {
+          console.log('Subscription payload not matched:', payload);
         }
       });
 
