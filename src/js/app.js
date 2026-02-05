@@ -31,6 +31,9 @@
         u.byId('searchInput').addEventListener('keypress', function (e) {
           if (e.key === 'Enter') searchContacts();
         });
+
+        // Load dashboard chart (all appointments)
+        loadDashboardChart();
       })
       .catch(function (err) {
         u.byId('app-loading').classList.add('hidden');
@@ -113,13 +116,7 @@
     if (!c) return;
 
     cleanupSubscriptions();
-    if (appointmentsChart) { appointmentsChart.destroy(); appointmentsChart = null; }
     currentContact = null;
-
-    // Reset chart state
-    u.byId('chartLoading').classList.remove('hidden');
-    u.byId('chartContainer').classList.add('hidden');
-    u.byId('chartEmpty').classList.add('hidden');
 
     // Switch views
     u.byId('searchView').classList.add('hidden');
@@ -169,7 +166,6 @@
 
   function backToSearch() {
     cleanupSubscriptions();
-    if (appointmentsChart) { appointmentsChart.destroy(); appointmentsChart = null; }
     currentContact = null;
     u.byId('detailView').classList.add('hidden');
     u.byId('searchView').classList.remove('hidden');
@@ -392,9 +388,36 @@
       '</div>';
   }
 
-  // ── Load Related Data ─────────────────────────────────────────
+  // ── Dashboard Chart ──────────────────────────────────────────
 
   var appointmentsChart = null;
+
+  function loadDashboardChart() {
+    plugin
+      .switchTo(MODELS.Appointment.sdkName)
+      .query()
+      .select(['id', 'appointment_time', 'total_retail_revenue', 'status'])
+      .limit(500)
+      .fetchAllRecords()
+      .pipe(window.toMainInstance(true))
+      .toPromise()
+      .then(function (records) {
+        var items = records ? Object.values(records) : [];
+        if (items.length === 0) {
+          u.byId('chartLoading').classList.add('hidden');
+          u.byId('chartEmpty').classList.remove('hidden');
+          return;
+        }
+        renderAppointmentsChart(items);
+      })
+      .catch(function (err) {
+        console.error('Dashboard chart failed:', err);
+        u.byId('chartLoading').classList.add('hidden');
+        u.byId('chartEmpty').classList.remove('hidden');
+      });
+  }
+
+  // ── Load Related Data ─────────────────────────────────────────
 
   function loadAppointments(contactId) {
     var container = u.byId('appointmentsList');
@@ -405,7 +428,7 @@
       .query()
       .select(MODELS.Appointment.fields)
       .where('patient_id', '=', contactId)
-      .limit(200)
+      .limit(50)
       .fetchAllRecords()
       .pipe(window.toMainInstance(true))
       .toPromise()
@@ -413,8 +436,6 @@
         var items = records ? Object.values(records) : [];
         if (items.length === 0) {
           container.innerHTML = '<p class="text-sm text-gray-400 py-4 text-center">No appointments found</p>';
-          u.byId('chartLoading').classList.add('hidden');
-          u.byId('chartEmpty').classList.remove('hidden');
           return;
         }
         // Sort by appointment_time descending
@@ -432,14 +453,9 @@
             '</div>';
         }).join('');
         u.byId('appointmentsCount').textContent = '(' + items.length + ')';
-
-        // Render chart
-        renderAppointmentsChart(items);
       })
       .catch(function (err) {
         container.innerHTML = '<p class="text-sm text-red-500 py-4">Failed to load: ' + u.escapeHtml(err.message) + '</p>';
-        u.byId('chartLoading').classList.add('hidden');
-        u.byId('chartEmpty').classList.remove('hidden');
       });
   }
 
