@@ -165,8 +165,62 @@
     u.byId('searchView').classList.remove('hidden');
   }
 
+  // ── Edit Contact ─────────────────────────────────────────────
+
+  function openEditModal() {
+    if (!currentContact) return;
+    u.byId('editFirstName').value = currentContact.first_name || '';
+    u.byId('editLastName').value = currentContact.last_name || '';
+    u.byId('editEmail').value = currentContact.email || '';
+    u.byId('editSms').value = currentContact.sms_number || '';
+    u.byId('editModal').classList.remove('hidden');
+  }
+
+  function closeEditModal() {
+    u.byId('editModal').classList.add('hidden');
+  }
+
+  function saveContact() {
+    if (!currentContact || !plugin) return;
+
+    var updates = {
+      first_name: u.byId('editFirstName').value.trim(),
+      last_name: u.byId('editLastName').value.trim(),
+      email: u.byId('editEmail').value.trim(),
+      sms_number: u.byId('editSms').value.trim(),
+    };
+
+    var btn = u.byId('editSaveBtn');
+    btn.disabled = true;
+    btn.textContent = 'Saving...';
+
+    var mutation = plugin.switchTo(MODELS.Contact.sdkName).mutation();
+    mutation.update(function (q) {
+      return q.where('id', currentContact.id).set(updates);
+    });
+
+    mutation.execute(true).toPromise()
+      .then(function () {
+        currentContact = Object.assign({}, currentContact, updates);
+        renderContactDetail(currentContact);
+        closeEditModal();
+        u.showToast('Contact saved', 'success');
+      })
+      .catch(function (err) {
+        u.showToast('Save failed: ' + err.message, 'error');
+        console.error('Save error:', err);
+      })
+      .finally(function () {
+        btn.disabled = false;
+        btn.textContent = 'Save';
+      });
+  }
+
   // Expose for onclick in HTML
   window.backToSearch = backToSearch;
+  window.openEditModal = openEditModal;
+  window.closeEditModal = closeEditModal;
+  window.saveContact = saveContact;
 
   // ── Render Contact Detail ─────────────────────────────────────
 

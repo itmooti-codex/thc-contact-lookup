@@ -92,9 +92,60 @@
             <h1 id="contactName" class="text-2xl font-bold text-gray-900"></h1>
             <p id="contactEmail" class="text-sm text-gray-500 mt-0.5"></p>
           </div>
-          <span id="liveIndicator" class="hidden live-indicator">
-            <span class="live-dot"></span> Live
-          </span>
+          <div class="flex items-center gap-3">
+            <button onclick="openEditModal()"
+              class="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors">
+              Edit
+            </button>
+            <span id="liveIndicator" class="hidden live-indicator">
+              <span class="live-dot"></span> Live
+            </span>
+          </div>
+        </div>
+
+        <!-- Edit Modal -->
+        <div id="editModal" class="hidden fixed inset-0 z-50">
+          <div class="fixed inset-0 bg-black/50" onclick="closeEditModal()"></div>
+          <div class="fixed inset-0 flex items-center justify-center p-4">
+            <div class="bg-white rounded-lg shadow-xl w-full max-w-md relative">
+              <div class="flex items-center justify-between px-6 py-4 border-b border-gray-200">
+                <h2 class="text-lg font-semibold text-gray-900">Edit Contact</h2>
+                <button onclick="closeEditModal()" class="text-gray-400 hover:text-gray-600">
+                  <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+                  </svg>
+                </button>
+              </div>
+              <div class="px-6 py-4 space-y-4">
+                <div>
+                  <label for="editFirstName" class="block text-sm font-medium text-gray-700 mb-1">First Name</label>
+                  <div class="input-wrapper"><input type="text" id="editFirstName"></div>
+                </div>
+                <div>
+                  <label for="editLastName" class="block text-sm font-medium text-gray-700 mb-1">Last Name</label>
+                  <div class="input-wrapper"><input type="text" id="editLastName"></div>
+                </div>
+                <div>
+                  <label for="editEmail" class="block text-sm font-medium text-gray-700 mb-1">Email</label>
+                  <div class="input-wrapper"><input type="email" id="editEmail"></div>
+                </div>
+                <div>
+                  <label for="editSms" class="block text-sm font-medium text-gray-700 mb-1">SMS Number</label>
+                  <div class="input-wrapper"><input type="tel" id="editSms"></div>
+                </div>
+              </div>
+              <div class="flex justify-end gap-3 px-6 py-4 border-t border-gray-200">
+                <button onclick="closeEditModal()"
+                  class="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors">
+                  Cancel
+                </button>
+                <button id="editSaveBtn" onclick="saveContact()"
+                  class="px-4 py-2 text-sm font-medium text-white bg-gray-900 rounded-lg hover:bg-gray-800 transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
+                  Save
+                </button>
+              </div>
+            </div>
+          </div>
         </div>
 
         <!-- Info cards grid -->
