@@ -435,6 +435,67 @@
 
   // ── Load Related Data ─────────────────────────────────────────
 
+  // ── Generic Status Filter Helper ──────────────────────────────
+  // Reusable filter pill system for any section with status-based filtering.
+  // Each section stores its own state object with: allItems, activeFilters, statusField, etc.
+
+  function renderFilterPills(state) {
+    var filtersEl = u.byId(state.filterId);
+    var statusCounts = {};
+    state.allItems.forEach(function (item) {
+      var s = item[state.statusField] || 'Unknown';
+      statusCounts[s] = (statusCounts[s] || 0) + 1;
+    });
+
+    var statuses = (state.statusOrder || []).filter(function (s) { return statusCounts[s]; });
+    Object.keys(statusCounts).forEach(function (s) {
+      if (statuses.indexOf(s) === -1) statuses.push(s);
+    });
+
+    if (statuses.length <= 1) {
+      filtersEl.classList.add('hidden');
+      state.activeFilters = {};
+      statuses.forEach(function (s) { state.activeFilters[s] = true; });
+      return;
+    }
+
+    filtersEl.classList.remove('hidden');
+    filtersEl.innerHTML = statuses.map(function (s) {
+      var active = !!state.activeFilters[s];
+      var count = statusCounts[s];
+      return '<button data-status="' + u.escapeHtml(s) + '" class="filter-pill px-3 py-1 text-xs font-medium rounded-full border transition-colors ' +
+        (active ? 'bg-gray-900 text-white border-gray-900' : 'bg-white text-gray-600 border-gray-300 hover:border-gray-400') +
+        '">' + u.escapeHtml(s) + ' (' + count + ')</button>';
+    }).join('');
+
+    filtersEl.querySelectorAll('.filter-pill').forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        var status = btn.getAttribute('data-status');
+        if (state.activeFilters[status]) {
+          delete state.activeFilters[status];
+        } else {
+          state.activeFilters[status] = true;
+        }
+        if (Object.keys(state.activeFilters).length === 0) {
+          statuses.forEach(function (s) { state.activeFilters[s] = true; });
+        }
+        renderFilterPills(state);
+        state.renderFiltered();
+      });
+    });
+  }
+
+  // ── Appointments ────────────────────────────────────────────────
+
+  var appointmentState = {
+    allItems: [],
+    activeFilters: { Completed: true },
+    filterId: 'appointmentFilters',
+    statusField: 'status',
+    statusOrder: ['Completed', 'Paid', 'Booked', 'Payment Processing', 'Script Added', 'Reschedule', 'Cancelled'],
+    renderFiltered: renderFilteredAppointments,
+  };
+
   function loadAppointments(contactId) {
     var container = u.byId('appointmentsList');
     container.innerHTML = '<p class="text-sm text-gray-400 py-4">Loading appointments...</p>';
@@ -454,25 +515,41 @@
           container.innerHTML = '<p class="text-sm text-gray-400 py-4 text-center">No appointments found</p>';
           return;
         }
-        // Sort by appointment_time descending
         items.sort(function (a, b) { return (b.appointment_time || 0) - (a.appointment_time || 0); });
-        container.innerHTML = items.map(function (a) {
-          return '<div class="flex items-center justify-between py-3 border-b border-gray-100 last:border-0">' +
-            '<div>' +
-            '<div class="text-sm font-medium text-gray-900">' + u.escapeHtml(a.type || 'Appointment') + '</div>' +
-            '<div class="text-xs text-gray-500">' + u.formatDate(a.appointment_time) + '</div>' +
-            '</div>' +
-            '<div class="flex items-center gap-3">' +
-            (a.fee_paid ? '<span class="text-sm text-gray-600">' + u.formatCurrency(a.fee_paid) + '</span>' : '') +
-            statusBadge(a.status) +
-            '</div>' +
-            '</div>';
-        }).join('');
-        u.byId('appointmentsCount').textContent = '(' + items.length + ')';
+        appointmentState.allItems = items;
+        renderFilterPills(appointmentState);
+        renderFilteredAppointments();
       })
       .catch(function (err) {
         container.innerHTML = '<p class="text-sm text-red-500 py-4">Failed to load: ' + u.escapeHtml(err.message) + '</p>';
       });
+  }
+
+  function renderFilteredAppointments() {
+    var container = u.byId('appointmentsList');
+    var filtered = appointmentState.allItems.filter(function (a) {
+      return appointmentState.activeFilters[a.status || 'Unknown'];
+    });
+
+    if (filtered.length === 0) {
+      container.innerHTML = '<p class="text-sm text-gray-400 py-4 text-center">No appointments match selected filters</p>';
+      u.byId('appointmentsCount').textContent = '(0)';
+      return;
+    }
+
+    container.innerHTML = filtered.map(function (a) {
+      return '<div class="flex items-center justify-between py-3 border-b border-gray-100 last:border-0">' +
+        '<div>' +
+        '<div class="text-sm font-medium text-gray-900">' + u.escapeHtml(a.type || 'Appointment') + '</div>' +
+        '<div class="text-xs text-gray-500">' + u.formatDate(a.appointment_time) + '</div>' +
+        '</div>' +
+        '<div class="flex items-center gap-3">' +
+        (a.fee_paid ? '<span class="text-sm text-gray-600">' + u.formatCurrency(a.fee_paid) + '</span>' : '') +
+        statusBadge(a.status) +
+        '</div>' +
+        '</div>';
+    }).join('');
+    u.byId('appointmentsCount').textContent = '(' + filtered.length + ')';
   }
 
   function renderAppointmentsChart(appointments) {
@@ -598,6 +675,17 @@
     return d;
   }
 
+  // ── Scripts ──────────────────────────────────────────────────────
+
+  var scriptState = {
+    allItems: [],
+    activeFilters: { Open: true },
+    filterId: 'scriptFilters',
+    statusField: 'script_status',
+    statusOrder: ['Open', 'To Be Processed', 'External Processing', 'Fulfilled', 'Draft', 'Stock Issue', 'Archived', 'Cancelled'],
+    renderFiltered: renderFilteredScripts,
+  };
+
   function loadScripts(contactId) {
     var container = u.byId('scriptsList');
     container.innerHTML = '<p class="text-sm text-gray-400 py-4">Loading scripts...</p>';
@@ -618,34 +706,58 @@
           return;
         }
         items.sort(function (a, b) { return (b.created_at || 0) - (a.created_at || 0); });
-        container.innerHTML = items.map(function (s) {
-          var remaining = s.remaining != null ? s.remaining + '/' + (s.supply_limit || '?') + ' remaining' : '';
-          return '<div class="flex items-center justify-between py-3 border-b border-gray-100 last:border-0">' +
-            '<div>' +
-            '<div class="text-sm font-medium text-gray-900">' + u.escapeHtml(s.condition || 'Script #' + s.id) + '</div>' +
-            '<div class="text-xs text-gray-500">' + u.formatDate(s.created_at) +
-            (remaining ? ' &middot; ' + remaining : '') +
-            (s.next_dispense_date ? ' &middot; Next: ' + u.formatDate(s.next_dispense_date) : '') +
-            '</div>' +
-            (s.dosage_instructions ? '<div class="text-xs text-gray-400 mt-0.5 truncate max-w-xs">' + u.escapeHtml(s.dosage_instructions) + '</div>' : '') +
-            '</div>' +
-            '<div class="flex items-center gap-2">' +
-            (s.can_dispense ? '<span class="inline-block w-2 h-2 rounded-full bg-green-500" title="Can dispense"></span>' : '') +
-            scriptStatusBadge(s.script_status) +
-            '</div>' +
-            '</div>';
-        }).join('');
-        u.byId('scriptsCount').textContent = '(' + items.length + ')';
+        scriptState.allItems = items;
+        renderFilterPills(scriptState);
+        renderFilteredScripts();
       })
       .catch(function (err) {
         container.innerHTML = '<p class="text-sm text-red-500 py-4">Failed to load: ' + u.escapeHtml(err.message) + '</p>';
       });
   }
 
-  // Purchases state — cached for client-side filtering
-  var allPurchases = [];
+  function renderFilteredScripts() {
+    var container = u.byId('scriptsList');
+    var filtered = scriptState.allItems.filter(function (s) {
+      return scriptState.activeFilters[s.script_status || 'Unknown'];
+    });
+
+    if (filtered.length === 0) {
+      container.innerHTML = '<p class="text-sm text-gray-400 py-4 text-center">No scripts match selected filters</p>';
+      u.byId('scriptsCount').textContent = '(0)';
+      return;
+    }
+
+    container.innerHTML = filtered.map(function (s) {
+      var remaining = s.remaining != null ? s.remaining + '/' + (s.supply_limit || '?') + ' remaining' : '';
+      return '<div class="flex items-center justify-between py-3 border-b border-gray-100 last:border-0">' +
+        '<div>' +
+        '<div class="text-sm font-medium text-gray-900">' + u.escapeHtml(s.condition || 'Script #' + s.id) + '</div>' +
+        '<div class="text-xs text-gray-500">' + u.formatDate(s.created_at) +
+        (remaining ? ' &middot; ' + remaining : '') +
+        (s.next_dispense_date ? ' &middot; Next: ' + u.formatDate(s.next_dispense_date) : '') +
+        '</div>' +
+        (s.dosage_instructions ? '<div class="text-xs text-gray-400 mt-0.5 truncate max-w-xs">' + u.escapeHtml(s.dosage_instructions) + '</div>' : '') +
+        '</div>' +
+        '<div class="flex items-center gap-2">' +
+        (s.can_dispense ? '<span class="inline-block w-2 h-2 rounded-full bg-green-500" title="Can dispense"></span>' : '') +
+        scriptStatusBadge(s.script_status) +
+        '</div>' +
+        '</div>';
+    }).join('');
+    u.byId('scriptsCount').textContent = '(' + filtered.length + ')';
+  }
+
+  // ── Purchases ────────────────────────────────────────────────────
+
   var productNameMap = {};
-  var activePurchaseFilters = { Paid: true };
+  var purchaseState = {
+    allItems: [],
+    activeFilters: { Paid: true },
+    filterId: 'purchaseFilters',
+    statusField: 'status',
+    statusOrder: ['Paid', 'Pending', 'Collections', 'Declined', 'Refunded', 'Voided', 'Written Off'],
+    renderFiltered: renderFilteredPurchases,
+  };
 
   function loadPurchases(contactId) {
     var container = u.byId('purchasesList');
@@ -675,7 +787,6 @@
           }
         });
 
-        // Fetch product internal names, then render
         var productNamePromise = productIds.length > 0
           ? plugin
               .switchTo(MODELS.Product.sdkName)
@@ -696,10 +807,8 @@
           }
 
           items.sort(function (a, b) { return (b.created_at || 0) - (a.created_at || 0); });
-          allPurchases = items;
-
-          // Build filter pills from statuses present in the data
-          renderPurchaseFilters();
+          purchaseState.allItems = items;
+          renderFilterPills(purchaseState);
           renderFilteredPurchases();
         });
       })
@@ -708,65 +817,10 @@
       });
   }
 
-  function renderPurchaseFilters() {
-    var filtersEl = u.byId('purchaseFilters');
-    // Collect unique statuses with counts
-    var statusCounts = {};
-    allPurchases.forEach(function (p) {
-      var s = p.status || 'Unknown';
-      statusCounts[s] = (statusCounts[s] || 0) + 1;
-    });
-
-    // Preferred display order
-    var order = ['Paid', 'Pending', 'Collections', 'Declined', 'Refunded', 'Voided', 'Written Off'];
-    var statuses = order.filter(function (s) { return statusCounts[s]; });
-    // Add any statuses not in the predefined order
-    Object.keys(statusCounts).forEach(function (s) {
-      if (statuses.indexOf(s) === -1) statuses.push(s);
-    });
-
-    if (statuses.length <= 1) {
-      filtersEl.classList.add('hidden');
-      // If only one status, show all
-      activePurchaseFilters = {};
-      statuses.forEach(function (s) { activePurchaseFilters[s] = true; });
-      return;
-    }
-
-    filtersEl.classList.remove('hidden');
-    filtersEl.innerHTML = statuses.map(function (s) {
-      var active = !!activePurchaseFilters[s];
-      var count = statusCounts[s];
-      return '<button data-status="' + u.escapeHtml(s) + '" class="purchase-filter-pill px-3 py-1 text-xs font-medium rounded-full border transition-colors ' +
-        (active
-          ? 'bg-gray-900 text-white border-gray-900'
-          : 'bg-white text-gray-600 border-gray-300 hover:border-gray-400') +
-        '">' + u.escapeHtml(s) + ' (' + count + ')</button>';
-    }).join('');
-
-    // Wire up click handlers
-    filtersEl.querySelectorAll('.purchase-filter-pill').forEach(function (btn) {
-      btn.addEventListener('click', function () {
-        var status = btn.getAttribute('data-status');
-        if (activePurchaseFilters[status]) {
-          delete activePurchaseFilters[status];
-        } else {
-          activePurchaseFilters[status] = true;
-        }
-        // If nothing selected, select all
-        if (Object.keys(activePurchaseFilters).length === 0) {
-          statuses.forEach(function (s) { activePurchaseFilters[s] = true; });
-        }
-        renderPurchaseFilters();
-        renderFilteredPurchases();
-      });
-    });
-  }
-
   function renderFilteredPurchases() {
     var container = u.byId('purchasesList');
-    var filtered = allPurchases.filter(function (p) {
-      return activePurchaseFilters[p.status || 'Unknown'];
+    var filtered = purchaseState.allItems.filter(function (p) {
+      return purchaseState.activeFilters[p.status || 'Unknown'];
     });
 
     if (filtered.length === 0) {
@@ -800,6 +854,17 @@
     u.byId('purchasesTotal').textContent = 'Total: ' + u.formatCurrency(total);
   }
 
+  // ── Dispenses ────────────────────────────────────────────────────
+
+  var dispenseState = {
+    allItems: [],
+    activeFilters: { Fulfilled: true },
+    filterId: 'dispenseFilters',
+    statusField: 'dispense_status',
+    statusOrder: ['Paid', 'Confirmed - In Progress', 'In Transit', 'Tracking Added', 'Fulfilled', 'Sent – Awaiting Confirmation', 'In Cart', 'On Hold', 'Payment Processing', 'Payment Issue', 'Cancelled'],
+    renderFiltered: renderFilteredDispenses,
+  };
+
   function loadDispenses(contactId) {
     var container = u.byId('dispensesList');
     container.innerHTML = '<p class="text-sm text-gray-400 py-4">Loading dispenses...</p>';
@@ -820,30 +885,47 @@
           return;
         }
         items.sort(function (a, b) { return (b.created_at || 0) - (a.created_at || 0); });
-        container.innerHTML = items.map(function (d) {
-          var trackHtml = d.tracking_link ? '<a href="' + d.tracking_link + '" target="_blank" class="text-xs text-blue-600 hover:underline">Track &#8599;</a>' : '';
-          return '<div class="flex items-center justify-between py-3 border-b border-gray-100 last:border-0">' +
-            '<div>' +
-            '<div class="text-sm font-medium text-gray-900">Dispense #' + d.id +
-            (d.flower_grams ? ' &middot; ' + d.flower_grams + 'g' : '') +
-            (d.quantity ? ' &middot; Qty ' + d.quantity : '') +
-            '</div>' +
-            '<div class="text-xs text-gray-500">' + u.formatDate(d.created_at) +
-            (d.tracking_number ? ' &middot; ' + u.escapeHtml(d.tracking_number) : '') +
-            '</div>' +
-            '</div>' +
-            '<div class="flex items-center gap-3">' +
-            trackHtml +
-            (d.item_retail_price ? '<span class="text-sm text-gray-600">' + u.formatCurrency(d.item_retail_price) + '</span>' : '') +
-            dispenseStatusBadge(d.dispense_status) +
-            '</div>' +
-            '</div>';
-        }).join('');
-        u.byId('dispensesCount').textContent = '(' + items.length + ')';
+        dispenseState.allItems = items;
+        renderFilterPills(dispenseState);
+        renderFilteredDispenses();
       })
       .catch(function (err) {
         container.innerHTML = '<p class="text-sm text-red-500 py-4">Failed to load: ' + u.escapeHtml(err.message) + '</p>';
       });
+  }
+
+  function renderFilteredDispenses() {
+    var container = u.byId('dispensesList');
+    var filtered = dispenseState.allItems.filter(function (d) {
+      return dispenseState.activeFilters[d.dispense_status || 'Unknown'];
+    });
+
+    if (filtered.length === 0) {
+      container.innerHTML = '<p class="text-sm text-gray-400 py-4 text-center">No dispenses match selected filters</p>';
+      u.byId('dispensesCount').textContent = '(0)';
+      return;
+    }
+
+    container.innerHTML = filtered.map(function (d) {
+      var trackHtml = d.tracking_link ? '<a href="' + d.tracking_link + '" target="_blank" class="text-xs text-blue-600 hover:underline">Track &#8599;</a>' : '';
+      return '<div class="flex items-center justify-between py-3 border-b border-gray-100 last:border-0">' +
+        '<div>' +
+        '<div class="text-sm font-medium text-gray-900">Dispense #' + d.id +
+        (d.flower_grams ? ' &middot; ' + d.flower_grams + 'g' : '') +
+        (d.quantity ? ' &middot; Qty ' + d.quantity : '') +
+        '</div>' +
+        '<div class="text-xs text-gray-500">' + u.formatDate(d.created_at) +
+        (d.tracking_number ? ' &middot; ' + u.escapeHtml(d.tracking_number) : '') +
+        '</div>' +
+        '</div>' +
+        '<div class="flex items-center gap-3">' +
+        trackHtml +
+        (d.item_retail_price ? '<span class="text-sm text-gray-600">' + u.formatCurrency(d.item_retail_price) + '</span>' : '') +
+        dispenseStatusBadge(d.dispense_status) +
+        '</div>' +
+        '</div>';
+    }).join('');
+    u.byId('dispensesCount').textContent = '(' + filtered.length + ')';
   }
 
   // ── Subscriptions ─────────────────────────────────────────────
