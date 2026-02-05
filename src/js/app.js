@@ -1,10 +1,15 @@
 // thc-contact-lookup — Main Application
-// This is the project-specific entry point.
-// Edit this file to build your app logic.
 (function () {
   'use strict';
 
-  var utils = window.AppUtils;
+  var u = window.AppUtils;
+  var plugin = null;
+  var contacts = [];
+  var currentContact = null;
+
+  // Subscription state
+  var contactSub = null;
+  var contactQuery = null;
 
   document.addEventListener('DOMContentLoaded', function () {
     init();
@@ -12,29 +17,468 @@
 
   function init() {
     window.VitalSync.connect()
-      .then(function (plugin) {
-        // SDK connected — hide loading, show content
-        var loading = utils.byId('app-loading');
-        var content = utils.byId('app-content');
-        if (loading) loading.classList.add('hidden');
-        if (content) content.classList.remove('hidden');
+      .then(function (p) {
+        plugin = p;
+        u.byId('app-loading').classList.add('hidden');
+        u.byId('app-content').classList.remove('hidden');
+        u.byId('searchInput').focus();
 
-        if (window.AppConfig.DEBUG) {
-          console.log('thc-contact-lookup ready, plugin:', plugin);
-        }
-
-        // Build your app here using:
-        //   plugin.switchTo('ModelName').query()...
-        //   plugin.switchTo('ModelName').mutation()...
-        //   utils.$(), utils.byId(), utils.formatCurrency(), etc.
+        // Wire up search
+        u.byId('searchBtn').addEventListener('click', searchContacts);
+        u.byId('searchInput').addEventListener('keypress', function (e) {
+          if (e.key === 'Enter') searchContacts();
+        });
       })
       .catch(function (err) {
-        // Show error state
-        var loading = utils.byId('app-loading');
-        var errorEl = utils.byId('app-error');
-        if (loading) loading.classList.add('hidden');
-        if (errorEl) errorEl.classList.remove('hidden');
+        u.byId('app-loading').classList.add('hidden');
+        u.byId('app-error').classList.remove('hidden');
         console.error('App init failed:', err);
       });
   }
+
+  // ── Search ────────────────────────────────────────────────────
+
+  function searchContacts() {
+    var term = u.byId('searchInput').value.trim();
+    if (!term) { u.showToast('Enter a search term', 'warning'); return; }
+
+    var btn = u.byId('searchBtn');
+    btn.disabled = true;
+    btn.textContent = 'Searching...';
+    u.byId('resultsTable').classList.add('hidden');
+    u.byId('noResults').classList.add('hidden');
+    u.byId('resultCount').textContent = '';
+
+    var searchTerm = '%' + term + '%';
+
+    plugin
+      .switchTo(MODELS.Contact.sdkName)
+      .query()
+      .select(MODELS.Contact.searchFields)
+      .where('email', 'like', searchTerm)
+      .orWhere('first_name', 'like', searchTerm)
+      .orWhere('last_name', 'like', searchTerm)
+      .orWhere('sms_number', 'like', searchTerm)
+      .limit(100)
+      .fetchAllRecords()
+      .pipe(window.toMainInstance(true))
+      .toPromise()
+      .then(function (records) {
+        contacts = records ? Object.values(records) : [];
+        if (contacts.length === 0) {
+          u.byId('noResults').classList.remove('hidden');
+        } else {
+          renderResults(contacts);
+        }
+      })
+      .catch(function (err) {
+        u.showToast('Search failed: ' + err.message, 'error');
+        console.error('Search error:', err);
+      })
+      .finally(function () {
+        btn.disabled = false;
+        btn.textContent = 'Search';
+      });
+  }
+
+  function renderResults(list) {
+    u.byId('resultCount').textContent = list.length + ' result' + (list.length !== 1 ? 's' : '');
+    var tbody = u.byId('resultsBody');
+    tbody.innerHTML = '';
+
+    list.forEach(function (c, i) {
+      var name = ((c.first_name || '') + ' ' + (c.last_name || '')).trim() || 'N/A';
+      var tr = document.createElement('tr');
+      tr.className = 'cursor-pointer hover:bg-gray-50 transition-colors';
+      tr.onclick = function () { selectContact(i); };
+      tr.innerHTML =
+        '<td class="px-4 py-3 font-medium text-gray-900">' + u.escapeHtml(name) + '</td>' +
+        '<td class="px-4 py-3 text-gray-600">' + u.escapeHtml(c.email || 'N/A') + '</td>' +
+        '<td class="px-4 py-3 text-gray-600">' + u.escapeHtml(c.sms_number || 'N/A') + '</td>' +
+        '<td class="px-4 py-3">' + statusBadge(c.application_status) + '</td>' +
+        '<td class="px-4 py-3 text-gray-500 text-sm">' + u.formatDate(c.last_activity) + '</td>';
+      tbody.appendChild(tr);
+    });
+
+    u.byId('resultsTable').classList.remove('hidden');
+  }
+
+  // ── Select Contact ────────────────────────────────────────────
+
+  function selectContact(index) {
+    var c = contacts[index];
+    if (!c) return;
+
+    cleanupSubscriptions();
+    currentContact = null;
+
+    // Switch views
+    u.byId('searchView').classList.add('hidden');
+    u.byId('detailView').classList.remove('hidden');
+
+    // Show loading in detail
+    u.byId('detailLoading').classList.remove('hidden');
+    u.byId('detailContent').classList.add('hidden');
+
+    // Fetch full contact details
+    plugin
+      .switchTo(MODELS.Contact.sdkName)
+      .query()
+      .select(MODELS.Contact.detailFields)
+      .where('id', '=', c.id)
+      .limit(1)
+      .fetchAllRecords()
+      .pipe(window.toMainInstance(true))
+      .toPromise()
+      .then(function (records) {
+        var list = records ? Object.values(records) : [];
+        if (list.length === 0) {
+          u.showToast('Contact not found', 'error');
+          backToSearch();
+          return;
+        }
+        currentContact = list[0];
+        renderContactDetail(currentContact);
+        u.byId('detailLoading').classList.add('hidden');
+        u.byId('detailContent').classList.remove('hidden');
+
+        // Set up subscription
+        subscribeToContact(currentContact.id);
+
+        // Load related data in parallel
+        loadAppointments(currentContact.id);
+        loadScripts(currentContact.id);
+        loadPurchases(currentContact.id);
+        loadDispenses(currentContact.id);
+      })
+      .catch(function (err) {
+        u.showToast('Failed to load contact: ' + err.message, 'error');
+        console.error(err);
+        backToSearch();
+      });
+  }
+
+  function backToSearch() {
+    cleanupSubscriptions();
+    currentContact = null;
+    u.byId('detailView').classList.add('hidden');
+    u.byId('searchView').classList.remove('hidden');
+  }
+
+  // Expose for onclick in HTML
+  window.backToSearch = backToSearch;
+
+  // ── Render Contact Detail ─────────────────────────────────────
+
+  function renderContactDetail(c) {
+    var name = ((c.first_name || '') + ' ' + (c.last_name || '')).trim() || 'Unknown';
+    var ontraportUrl = 'https://app.ontraport.com/#!/contact/edit&id=' + c.id;
+
+    // Header
+    u.byId('contactName').innerHTML = '<a href="' + ontraportUrl + '" target="_blank" rel="noopener" class="hover:opacity-70 transition-opacity">' + u.escapeHtml(name) + ' &#8599;</a>';
+    u.byId('contactEmail').textContent = c.email || '';
+
+    // Address
+    var parts = [c.address, c.city, c.state_au || c.state, c.zip_code].filter(Boolean);
+    var fullAddress = parts.join(', ');
+    var mapsUrl = fullAddress ? 'https://www.google.com/maps/search/?api=1&query=' + encodeURIComponent(fullAddress) : '';
+
+    // Application card
+    u.byId('cardApplication').innerHTML =
+      detailRow('Status', statusBadge(c.application_status)) +
+      detailRow('Treatment Plan', statusBadge(c.treatment_plan, 'blue')) +
+      detailRow('Date Applied', u.formatDate(c.application_date)) +
+      detailRow('Cannabis Eligibility', statusBadge(c.cannabis_outcome, c.cannabis_outcome === 'Eligible' ? 'green' : 'red'));
+
+    // Contact card
+    var phoneHtml = c.sms_number ? '<a href="tel:' + c.sms_number + '" class="text-blue-600 hover:underline">' + u.escapeHtml(c.sms_number) + '</a>' : 'N/A';
+    var emailHtml = c.email ? '<a href="mailto:' + c.email + '" class="text-blue-600 hover:underline">' + u.escapeHtml(c.email) + '</a>' : 'N/A';
+    u.byId('cardContact').innerHTML =
+      detailRow('Phone', phoneHtml) +
+      detailRow('Email', emailHtml) +
+      detailRow('Sex', c.sex || 'N/A') +
+      detailRow('Age', c.age || 'N/A') +
+      detailRow('Birthday', u.formatDate(c.birthday));
+
+    // Address card
+    u.byId('cardAddress').innerHTML =
+      detailRow('Address', mapsUrl ? '<a href="' + mapsUrl + '" target="_blank" class="text-blue-600 hover:underline">' + u.escapeHtml(fullAddress) + ' &#8599;</a>' : 'N/A');
+
+    // Medical card
+    u.byId('cardMedical').innerHTML =
+      detailRow('Medicare', c.medicare_number || 'N/A') +
+      detailRow('IHI', c.ihi_number || 'N/A') +
+      detailRow('Allergies', c.allergies_information || 'None recorded') +
+      detailRow('Pharmacy', c.pharmacy_name || 'N/A') +
+      detailRow('Flower Limit', (c.monthly_cannabis_dispense_limit || '—') + 'g/month') +
+      detailRow('Flower Available', (c.flower_gms_available || '—') + 'g');
+
+    // Scripts summary
+    u.byId('cardScripts').innerHTML =
+      detailRow('Open Scripts', c.scripts_open || '0') +
+      detailRow('Fulfilled', c.scripts_fulfilled || '0') +
+      detailRow('First Script', u.formatDate(c.date_first_script)) +
+      detailRow('Last Script', u.formatDate(c.date_last_script));
+
+    // Purchases summary
+    u.byId('cardPurchases').innerHTML =
+      detailRow('First Purchase', u.formatDate(c.date_first_item_purchase)) +
+      detailRow('Last Purchase', u.formatDate(c.date_last_item_purchase));
+  }
+
+  function detailRow(label, value) {
+    return '<div class="flex justify-between py-1.5 border-b border-gray-100 last:border-0">' +
+      '<span class="text-sm text-gray-500">' + label + '</span>' +
+      '<span class="text-sm text-gray-900 text-right">' + (value || 'N/A') + '</span>' +
+      '</div>';
+  }
+
+  // ── Load Related Data ─────────────────────────────────────────
+
+  function loadAppointments(contactId) {
+    var container = u.byId('appointmentsList');
+    container.innerHTML = '<p class="text-sm text-gray-400 py-4">Loading appointments...</p>';
+
+    plugin
+      .switchTo(MODELS.Appointment.sdkName)
+      .query()
+      .select(MODELS.Appointment.fields)
+      .where('patient_id', '=', contactId)
+      .limit(50)
+      .fetchAllRecords()
+      .pipe(window.toMainInstance(true))
+      .toPromise()
+      .then(function (records) {
+        var items = records ? Object.values(records) : [];
+        if (items.length === 0) {
+          container.innerHTML = '<p class="text-sm text-gray-400 py-4 text-center">No appointments found</p>';
+          return;
+        }
+        // Sort by appointment_time descending
+        items.sort(function (a, b) { return (b.appointment_time || 0) - (a.appointment_time || 0); });
+        container.innerHTML = items.map(function (a) {
+          return '<div class="flex items-center justify-between py-3 border-b border-gray-100 last:border-0">' +
+            '<div>' +
+            '<div class="text-sm font-medium text-gray-900">' + u.escapeHtml(a.type || 'Appointment') + '</div>' +
+            '<div class="text-xs text-gray-500">' + u.formatDate(a.appointment_time) + '</div>' +
+            '</div>' +
+            '<div class="flex items-center gap-3">' +
+            (a.fee_paid ? '<span class="text-sm text-gray-600">' + u.formatCurrency(a.fee_paid) + '</span>' : '') +
+            statusBadge(a.status) +
+            '</div>' +
+            '</div>';
+        }).join('');
+        u.byId('appointmentsCount').textContent = '(' + items.length + ')';
+      })
+      .catch(function (err) {
+        container.innerHTML = '<p class="text-sm text-red-500 py-4">Failed to load: ' + u.escapeHtml(err.message) + '</p>';
+      });
+  }
+
+  function loadScripts(contactId) {
+    var container = u.byId('scriptsList');
+    container.innerHTML = '<p class="text-sm text-gray-400 py-4">Loading scripts...</p>';
+
+    plugin
+      .switchTo(MODELS.Script.sdkName)
+      .query()
+      .select(MODELS.Script.fields)
+      .where('patient_id', '=', contactId)
+      .limit(50)
+      .fetchAllRecords()
+      .pipe(window.toMainInstance(true))
+      .toPromise()
+      .then(function (records) {
+        var items = records ? Object.values(records) : [];
+        if (items.length === 0) {
+          container.innerHTML = '<p class="text-sm text-gray-400 py-4 text-center">No scripts found</p>';
+          return;
+        }
+        items.sort(function (a, b) { return (b.created_at || 0) - (a.created_at || 0); });
+        container.innerHTML = items.map(function (s) {
+          var remaining = s.remaining != null ? s.remaining + '/' + (s.supply_limit || '?') + ' remaining' : '';
+          return '<div class="flex items-center justify-between py-3 border-b border-gray-100 last:border-0">' +
+            '<div>' +
+            '<div class="text-sm font-medium text-gray-900">' + u.escapeHtml(s.condition || 'Script #' + s.id) + '</div>' +
+            '<div class="text-xs text-gray-500">' + u.formatDate(s.created_at) +
+            (remaining ? ' &middot; ' + remaining : '') +
+            (s.next_dispense_date ? ' &middot; Next: ' + u.formatDate(s.next_dispense_date) : '') +
+            '</div>' +
+            (s.dosage_instructions ? '<div class="text-xs text-gray-400 mt-0.5 truncate max-w-xs">' + u.escapeHtml(s.dosage_instructions) + '</div>' : '') +
+            '</div>' +
+            '<div class="flex items-center gap-2">' +
+            (s.can_dispense ? '<span class="inline-block w-2 h-2 rounded-full bg-green-500" title="Can dispense"></span>' : '') +
+            scriptStatusBadge(s.script_status) +
+            '</div>' +
+            '</div>';
+        }).join('');
+        u.byId('scriptsCount').textContent = '(' + items.length + ')';
+      })
+      .catch(function (err) {
+        container.innerHTML = '<p class="text-sm text-red-500 py-4">Failed to load: ' + u.escapeHtml(err.message) + '</p>';
+      });
+  }
+
+  function loadPurchases(contactId) {
+    var container = u.byId('purchasesList');
+    container.innerHTML = '<p class="text-sm text-gray-400 py-4">Loading purchases...</p>';
+
+    plugin
+      .switchTo(MODELS.Purchase.sdkName)
+      .query()
+      .select(MODELS.Purchase.fields)
+      .where('contact_id', '=', contactId)
+      .limit(50)
+      .fetchAllRecords()
+      .pipe(window.toMainInstance(true))
+      .toPromise()
+      .then(function (records) {
+        var items = records ? Object.values(records) : [];
+        if (items.length === 0) {
+          container.innerHTML = '<p class="text-sm text-gray-400 py-4 text-center">No purchases found</p>';
+          return;
+        }
+        items.sort(function (a, b) { return (b.created_at || 0) - (a.created_at || 0); });
+        container.innerHTML = items.map(function (p) {
+          return '<div class="flex items-center justify-between py-3 border-b border-gray-100 last:border-0">' +
+            '<div>' +
+            '<div class="text-sm font-medium text-gray-900">' + u.escapeHtml(p.name || 'Purchase #' + p.id) + '</div>' +
+            '<div class="text-xs text-gray-500">' + u.formatDate(p.created_at) +
+            (p.quantity > 1 ? ' &middot; Qty: ' + p.quantity : '') +
+            '</div>' +
+            '</div>' +
+            '<div class="flex items-center gap-3">' +
+            '<span class="text-sm font-semibold text-gray-900">' + u.formatCurrency(p.total_purchase || p.price) + '</span>' +
+            purchaseStatusBadge(p.status) +
+            '</div>' +
+            '</div>';
+        }).join('');
+        u.byId('purchasesCount').textContent = '(' + items.length + ')';
+
+        // Total revenue
+        var total = items.reduce(function (sum, p) { return sum + (p.total_purchase || p.price || 0); }, 0);
+        u.byId('purchasesTotal').textContent = 'Total: ' + u.formatCurrency(total);
+      })
+      .catch(function (err) {
+        container.innerHTML = '<p class="text-sm text-red-500 py-4">Failed to load: ' + u.escapeHtml(err.message) + '</p>';
+      });
+  }
+
+  function loadDispenses(contactId) {
+    var container = u.byId('dispensesList');
+    container.innerHTML = '<p class="text-sm text-gray-400 py-4">Loading dispenses...</p>';
+
+    plugin
+      .switchTo(MODELS.Dispense.sdkName)
+      .query()
+      .select(MODELS.Dispense.fields)
+      .where('patient_to_pay_id', '=', contactId)
+      .limit(50)
+      .fetchAllRecords()
+      .pipe(window.toMainInstance(true))
+      .toPromise()
+      .then(function (records) {
+        var items = records ? Object.values(records) : [];
+        if (items.length === 0) {
+          container.innerHTML = '<p class="text-sm text-gray-400 py-4 text-center">No dispenses found</p>';
+          return;
+        }
+        items.sort(function (a, b) { return (b.created_at || 0) - (a.created_at || 0); });
+        container.innerHTML = items.map(function (d) {
+          var trackHtml = d.tracking_link ? '<a href="' + d.tracking_link + '" target="_blank" class="text-xs text-blue-600 hover:underline">Track &#8599;</a>' : '';
+          return '<div class="flex items-center justify-between py-3 border-b border-gray-100 last:border-0">' +
+            '<div>' +
+            '<div class="text-sm font-medium text-gray-900">Dispense #' + d.id +
+            (d.flower_grams ? ' &middot; ' + d.flower_grams + 'g' : '') +
+            (d.quantity ? ' &middot; Qty ' + d.quantity : '') +
+            '</div>' +
+            '<div class="text-xs text-gray-500">' + u.formatDate(d.created_at) +
+            (d.tracking_number ? ' &middot; ' + u.escapeHtml(d.tracking_number) : '') +
+            '</div>' +
+            '</div>' +
+            '<div class="flex items-center gap-3">' +
+            trackHtml +
+            (d.item_retail_price ? '<span class="text-sm text-gray-600">' + u.formatCurrency(d.item_retail_price) + '</span>' : '') +
+            dispenseStatusBadge(d.dispense_status) +
+            '</div>' +
+            '</div>';
+        }).join('');
+        u.byId('dispensesCount').textContent = '(' + items.length + ')';
+      })
+      .catch(function (err) {
+        container.innerHTML = '<p class="text-sm text-red-500 py-4">Failed to load: ' + u.escapeHtml(err.message) + '</p>';
+      });
+  }
+
+  // ── Subscriptions ─────────────────────────────────────────────
+
+  function subscribeToContact(contactId) {
+    try {
+      contactQuery = plugin
+        .switchTo(MODELS.Contact.sdkName)
+        .query()
+        .select(MODELS.Contact.detailFields)
+        .where('id', '=', contactId)
+        .noDestroy();
+
+      contactSub = contactQuery.subscribe().subscribe(function (payload) {
+        var updatedData = null;
+        if (Array.isArray(payload) && payload.length > 0) {
+          var item = payload[0];
+          updatedData = item && item.getState ? item.getState() : item;
+        } else if (payload && payload.records) {
+          var record = Object.values(payload.records)[0];
+          updatedData = record && record.getState ? record.getState() : record;
+        }
+        if (updatedData && updatedData.id) {
+          currentContact = Object.assign({}, currentContact, updatedData);
+          renderContactDetail(currentContact);
+          u.showToast('Contact updated', 'info', 2000);
+        }
+      });
+
+      // Show live indicator
+      u.byId('liveIndicator').classList.remove('hidden');
+    } catch (err) {
+      console.log('Subscription failed:', err.message);
+    }
+  }
+
+  function cleanupSubscriptions() {
+    if (contactSub) { contactSub.unsubscribe(); contactSub = null; }
+    if (contactQuery) { try { contactQuery.destroy(); } catch (e) {} contactQuery = null; }
+    var indicator = u.byId('liveIndicator');
+    if (indicator) indicator.classList.add('hidden');
+  }
+
+  window.addEventListener('beforeunload', cleanupSubscriptions);
+
+  // ── Status Badge Helpers ──────────────────────────────────────
+
+  function statusBadge(status, colorHint) {
+    if (!status) return '<span class="text-xs text-gray-400">—</span>';
+    var colors = badgeColors(status, colorHint);
+    return '<span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ' + colors + '">' + u.escapeHtml(status) + '</span>';
+  }
+
+  function badgeColors(status, hint) {
+    if (hint === 'green') return 'bg-green-100 text-green-800';
+    if (hint === 'red') return 'bg-red-100 text-red-800';
+    if (hint === 'blue') return 'bg-blue-100 text-blue-800';
+    var s = (status || '').toLowerCase();
+    if (s.includes('paid') || s.includes('completed') || s.includes('fulfilled') || s.includes('approved') || s.includes('live') || s.includes('eligible') || s.includes('active') || s.includes('won'))
+      return 'bg-green-100 text-green-800';
+    if (s.includes('cancel') || s.includes('suspend') || s.includes('declined') || s.includes('refund') || s.includes('void') || s.includes('lost') || s.includes('ineligible') || s.includes('terminated') || s.includes('issue'))
+      return 'bg-red-100 text-red-800';
+    if (s.includes('booked') || s.includes('processing') || s.includes('progress') || s.includes('transit') || s.includes('open') || s.includes('draft'))
+      return 'bg-yellow-100 text-yellow-800';
+    if (s.includes('new') || s.includes('quiz') || s.includes('intake') || s.includes('pending'))
+      return 'bg-blue-100 text-blue-800';
+    return 'bg-gray-100 text-gray-800';
+  }
+
+  function scriptStatusBadge(status) { return statusBadge(status); }
+  function purchaseStatusBadge(status) { return statusBadge(status); }
+  function dispenseStatusBadge(status) { return statusBadge(status); }
+
 })();

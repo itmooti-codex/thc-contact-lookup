@@ -41,6 +41,19 @@
     });
   }
 
+  // Race a promise against a timeout
+  function withTimeout(promise, ms, label) {
+    return new Promise(function (resolve, reject) {
+      var timer = setTimeout(function () {
+        reject(new Error((label || 'Operation') + ' timed out after ' + (ms / 1000) + 's'));
+      }, ms);
+      promise.then(
+        function (val) { clearTimeout(timer); resolve(val); },
+        function (err) { clearTimeout(timer); reject(err); }
+      );
+    });
+  }
+
   // Connect to VitalSync
   function connect() {
     var config = window.AppConfig || {};
@@ -50,18 +63,20 @@
     }
 
     setStatus('loading');
+    console.log('[VitalSync] Waiting for SDK script to load...');
 
     return waitForSDK()
       .then(function () {
-        return window
-          .initVitalStatsSDK({
-            slug: config.SLUG,
-            apiKey: config.API_KEY || '',
-            isDefault: true,
-          })
-          .toPromise();
+        console.log('[VitalSync] SDK loaded. Initializing with slug:', config.SLUG);
+        var initObservable = window.initVitalStatsSDK({
+          slug: config.SLUG,
+          apiKey: config.API_KEY || '',
+          isDefault: true,
+        });
+        return withTimeout(initObservable.toPromise(), 30000, 'SDK init');
       })
       .then(function (initResult) {
+        console.log('[VitalSync] Init complete:', initResult);
         plugin = (initResult && initResult.plugin) || (window.getVitalStatsPlugin && window.getVitalStatsPlugin());
 
         if (!plugin) {
@@ -69,12 +84,12 @@
         }
 
         setStatus('connected');
-        if (config.DEBUG) console.log('VitalSync connected');
+        console.log('[VitalSync] Connected successfully');
         return plugin;
       })
       .catch(function (err) {
         setStatus('error');
-        console.error('VitalSync connection failed:', err);
+        console.error('[VitalSync] Connection failed:', err);
         throw err;
       });
   }

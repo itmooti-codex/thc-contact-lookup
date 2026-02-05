@@ -54,6 +54,51 @@ h1, h2, h3, h4 {
   to { transform: rotate(360deg); }
 }
 
+/* ── Live Indicator ────────────────────────────────────────── */
+.live-indicator {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 500;
+  color: #16a34a;
+  background: #f0fdf4;
+  border: 1px solid #bbf7d0;
+  border-radius: 9999px;
+  padding: 4px 12px;
+}
+
+.live-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  background: #16a34a;
+  border-radius: 50%;
+  animation: pulse-dot 2s ease-in-out infinite;
+}
+
+@keyframes pulse-dot {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}
+
+/* ── Details Chevron ───────────────────────────────────────── */
+details[open] .details-chevron {
+  transform: rotate(180deg);
+}
+
+.details-chevron {
+  transition: transform 0.2s ease;
+}
+
+details summary::-webkit-details-marker {
+  display: none;
+}
+
+details summary {
+  list-style: none;
+}
+
 /* ── Ontraport Overrides ────────────────────────────────────── */
 /* Fix common Ontraport page styling conflicts */
 .input-wrapper {
@@ -80,4 +125,23 @@ h1, h2, h3, h4 {
 .input-wrapper:focus-within {
   box-shadow: 0 0 0 2px rgba(59 130 246 / 0.5);
   border-color: rgb(59 130 246);
+}
+
+/* ── Table Styles ──────────────────────────────────────────── */
+#resultsTable table {
+  border-collapse: collapse;
+}
+
+#resultsTable th {
+  font-family: var(--font-heading);
+}
+
+/* ── Responsive ────────────────────────────────────────────── */
+@media (max-width: 640px) {
+  #resultsTable th:nth-child(3),
+  #resultsTable td:nth-child(3),
+  #resultsTable th:nth-child(5),
+  #resultsTable td:nth-child(5) {
+    display: none;
+  }
 }

@@ -3,13 +3,12 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>The Happy Clinic | thc-contact-lookup (Dev)</title>
+  <title>The Happy Clinic | Contact Lookup (Dev)</title>
 
   <!-- ========== MOCK DATA (dev only) ========== -->
   <script src="./mock-data.js"></script>
 
   <!-- ========== SIMULATED ONTRAPORT HEADER ========== -->
-  <!-- In production, these values come from Ontraport merge fields in header code -->
   <script>
     window.AppConfig = window.AppConfig || {};
     if (window.__ONTRAPORT_MOCK__) {
@@ -30,11 +29,6 @@
     src="https://static-au03.vitalstats.app/static/sdk/v1/latest.js"
     crossorigin="anonymous"></script>
 
-  <!-- VitalStats Dynamic List SDK (for Ontraport dynamic lists) -->
-  <script async
-    src="https://static-au03.vitalstats.app/static/dynamic-list/v1/latest.js"
-    crossorigin="anonymous"></script>
-
   <!-- Custom Styles -->
   <link rel="stylesheet" href="../src/css/styles.css">
 
@@ -43,33 +37,216 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@600;700;800&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 </head>
-<body>
+<body class="bg-gray-50 min-h-screen">
   <!-- ========== DEV BANNER ========== -->
   <div id="dev-banner" style="background:#fff3cd;padding:8px 16px;font-size:12px;text-align:center;font-family:monospace;">
     DEV MODE — Simulating Ontraport page environment
   </div>
 
   <!-- ========== SIMULATED ONTRAPORT BODY ========== -->
-  <!-- In production, this HTML goes into Ontraport page body HTML blocks -->
-  <div id="app-root" class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
+  <div id="app-root" class="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
+
+    <!-- Initial loading state -->
     <div id="app-loading" class="flex items-center justify-center py-20">
       <div class="text-center">
         <div class="loading-spinner mx-auto mb-4"></div>
-        <p class="text-sm text-gray-500">Loading...</p>
+        <p class="text-sm text-gray-500">Connecting to VitalSync...</p>
       </div>
     </div>
-    <div id="app-content" class="hidden">
-      <!-- App content rendered by JS -->
-    </div>
+
+    <!-- Error state -->
     <div id="app-error" class="hidden text-center py-20">
       <p class="text-red-600 font-semibold">Something went wrong.</p>
       <p class="text-sm text-gray-500 mt-2">Please refresh the page.</p>
+    </div>
+
+    <!-- Main app content -->
+    <div id="app-content" class="hidden">
+
+      <!-- ═══ SEARCH VIEW ═══ -->
+      <div id="searchView">
+        <h1 class="text-2xl font-bold text-gray-900 mb-6">Contact Lookup</h1>
+
+        <!-- Search bar -->
+        <div class="flex gap-3 mb-4">
+          <div class="input-wrapper flex-1">
+            <input type="text" id="searchInput"
+              placeholder="Search by name, email, or phone..."
+              autocomplete="off">
+          </div>
+          <button id="searchBtn"
+            class="px-6 py-2 bg-gray-900 text-white text-sm font-medium rounded-lg hover:bg-gray-800 transition-colors disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap">
+            Search
+          </button>
+        </div>
+
+        <!-- Result count -->
+        <p id="resultCount" class="text-sm text-gray-500 mb-3"></p>
+
+        <!-- No results -->
+        <div id="noResults" class="hidden text-center py-12">
+          <p class="text-gray-500">No contacts found.</p>
+          <p class="text-sm text-gray-400 mt-1">Try a different search term.</p>
+        </div>
+
+        <!-- Results table -->
+        <div id="resultsTable" class="hidden bg-white rounded-lg border border-gray-200 overflow-hidden">
+          <table class="w-full text-left">
+            <thead class="bg-gray-50 border-b border-gray-200">
+              <tr>
+                <th class="px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Name</th>
+                <th class="px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Email</th>
+                <th class="px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Phone</th>
+                <th class="px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Status</th>
+                <th class="px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Last Active</th>
+              </tr>
+            </thead>
+            <tbody id="resultsBody" class="divide-y divide-gray-100"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- ═══ DETAIL VIEW ═══ -->
+      <div id="detailView" class="hidden">
+
+        <!-- Back button -->
+        <button onclick="backToSearch()"
+          class="flex items-center gap-1 text-sm text-gray-500 hover:text-gray-900 transition-colors mb-4">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/>
+          </svg>
+          Back to search
+        </button>
+
+        <!-- Loading state for detail -->
+        <div id="detailLoading" class="flex items-center justify-center py-20">
+          <div class="text-center">
+            <div class="loading-spinner mx-auto mb-4"></div>
+            <p class="text-sm text-gray-500">Loading contact...</p>
+          </div>
+        </div>
+
+        <!-- Detail content -->
+        <div id="detailContent" class="hidden">
+
+          <!-- Contact header -->
+          <div class="flex items-center justify-between mb-6">
+            <div>
+              <h1 id="contactName" class="text-2xl font-bold text-gray-900"></h1>
+              <p id="contactEmail" class="text-sm text-gray-500 mt-0.5"></p>
+            </div>
+            <span id="liveIndicator" class="hidden live-indicator">
+              <span class="live-dot"></span> Live
+            </span>
+          </div>
+
+          <!-- Info cards grid -->
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-8">
+
+            <!-- Application card -->
+            <div class="bg-white rounded-lg border border-gray-200 p-4">
+              <h3 class="text-sm font-semibold text-gray-900 mb-3 uppercase tracking-wider">Application</h3>
+              <div id="cardApplication"></div>
+            </div>
+
+            <!-- Contact card -->
+            <div class="bg-white rounded-lg border border-gray-200 p-4">
+              <h3 class="text-sm font-semibold text-gray-900 mb-3 uppercase tracking-wider">Contact</h3>
+              <div id="cardContact"></div>
+            </div>
+
+            <!-- Address card -->
+            <div class="bg-white rounded-lg border border-gray-200 p-4">
+              <h3 class="text-sm font-semibold text-gray-900 mb-3 uppercase tracking-wider">Address</h3>
+              <div id="cardAddress"></div>
+            </div>
+
+            <!-- Medical card -->
+            <div class="bg-white rounded-lg border border-gray-200 p-4">
+              <h3 class="text-sm font-semibold text-gray-900 mb-3 uppercase tracking-wider">Medical</h3>
+              <div id="cardMedical"></div>
+            </div>
+
+            <!-- Scripts summary card -->
+            <div class="bg-white rounded-lg border border-gray-200 p-4">
+              <h3 class="text-sm font-semibold text-gray-900 mb-3 uppercase tracking-wider">Scripts Summary</h3>
+              <div id="cardScripts"></div>
+            </div>
+
+            <!-- Purchases summary card -->
+            <div class="bg-white rounded-lg border border-gray-200 p-4">
+              <h3 class="text-sm font-semibold text-gray-900 mb-3 uppercase tracking-wider">Purchases Summary</h3>
+              <div id="cardPurchases"></div>
+            </div>
+          </div>
+
+          <!-- Related data sections -->
+          <div class="space-y-4">
+
+            <!-- Appointments -->
+            <details class="bg-white rounded-lg border border-gray-200" open>
+              <summary class="px-4 py-3 cursor-pointer select-none flex items-center justify-between hover:bg-gray-50 transition-colors">
+                <span class="text-sm font-semibold text-gray-900 uppercase tracking-wider">
+                  Appointments <span id="appointmentsCount" class="text-gray-400 font-normal normal-case"></span>
+                </span>
+                <svg class="w-4 h-4 text-gray-400 details-chevron" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
+                </svg>
+              </summary>
+              <div id="appointmentsList" class="px-4 pb-3"></div>
+            </details>
+
+            <!-- Scripts -->
+            <details class="bg-white rounded-lg border border-gray-200" open>
+              <summary class="px-4 py-3 cursor-pointer select-none flex items-center justify-between hover:bg-gray-50 transition-colors">
+                <span class="text-sm font-semibold text-gray-900 uppercase tracking-wider">
+                  Scripts <span id="scriptsCount" class="text-gray-400 font-normal normal-case"></span>
+                </span>
+                <svg class="w-4 h-4 text-gray-400 details-chevron" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
+                </svg>
+              </summary>
+              <div id="scriptsList" class="px-4 pb-3"></div>
+            </details>
+
+            <!-- Purchases -->
+            <details class="bg-white rounded-lg border border-gray-200" open>
+              <summary class="px-4 py-3 cursor-pointer select-none flex items-center justify-between hover:bg-gray-50 transition-colors">
+                <span class="text-sm font-semibold text-gray-900 uppercase tracking-wider">
+                  Purchases <span id="purchasesCount" class="text-gray-400 font-normal normal-case"></span>
+                  <span id="purchasesTotal" class="text-gray-500 font-normal normal-case ml-2"></span>
+                </span>
+                <svg class="w-4 h-4 text-gray-400 details-chevron" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
+                </svg>
+              </summary>
+              <div id="purchasesList" class="px-4 pb-3"></div>
+            </details>
+
+            <!-- Dispenses -->
+            <details class="bg-white rounded-lg border border-gray-200" open>
+              <summary class="px-4 py-3 cursor-pointer select-none flex items-center justify-between hover:bg-gray-50 transition-colors">
+                <span class="text-sm font-semibold text-gray-900 uppercase tracking-wider">
+                  Dispenses <span id="dispensesCount" class="text-gray-400 font-normal normal-case"></span>
+                </span>
+                <svg class="w-4 h-4 text-gray-400 details-chevron" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
+                </svg>
+              </summary>
+              <div id="dispensesList" class="px-4 pb-3"></div>
+            </details>
+
+          </div>
+        </div>
+      </div>
+
     </div>
   </div>
 
   <!-- ========== SIMULATED ONTRAPORT FOOTER ========== -->
   <script src="../src/js/config.js"></script>
   <script src="../src/js/utils.js"></script>
+  <script src="../src/types/models.js"></script>
   <script src="../src/js/vitalsync.js"></script>
   <script src="../src/js/app.js"></script>
 </body>
