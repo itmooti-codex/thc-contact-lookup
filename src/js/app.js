@@ -155,11 +155,8 @@
           backToSearch();
           return;
         }
-        var raw = list[0];
-        // SDK records may store id as non-enumerable — extract explicitly
-        currentContact = Object.assign({}, raw);
-        if (!currentContact.id && raw.id) currentContact.id = raw.id;
-        console.log('Contact loaded, id:', currentContact.id, 'keys:', Object.keys(currentContact).slice(0, 10));
+        currentContact = list[0];
+        console.log('Contact loaded, id:', currentContact.id, 'type:', typeof currentContact.id, 'hasGetState:', !!(currentContact && currentContact.getState));
         renderContactDetail(currentContact);
         u.byId('detailLoading').classList.add('hidden');
         u.byId('detailContent').classList.remove('hidden');
