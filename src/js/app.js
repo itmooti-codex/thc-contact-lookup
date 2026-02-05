@@ -156,7 +156,6 @@
           return;
         }
         currentContact = list[0];
-        console.log('Contact loaded, id:', currentContact.id, 'type:', typeof currentContact.id, 'hasGetState:', !!(currentContact && currentContact.getState));
         renderContactDetail(currentContact);
         u.byId('detailLoading').classList.add('hidden');
         u.byId('detailContent').classList.remove('hidden');
@@ -213,7 +212,6 @@
     btn.disabled = true;
     btn.textContent = 'Saving...';
 
-    console.log('Saving contact, id:', currentContact.id, 'type:', typeof currentContact.id);
     var contactId = currentContact.id;
     var mutation = plugin.switchTo(MODELS.Contact.sdkName).mutation();
     mutation.update(function (q) {
@@ -743,39 +741,33 @@
         .noDestroy();
 
       contactSub = contactQuery.subscribe().subscribe(function (payload) {
-        console.log('Subscription raw payload type:', typeof payload, Array.isArray(payload) ? 'Array(' + payload.length + ')' : '');
+        if (!payload) return;
         var updatedData = null;
         if (Array.isArray(payload) && payload.length > 0) {
           var item = payload[0];
-          console.log('Subscription item:', item, 'hasGetState:', !!(item && item.getState));
-          if (item && item.getState) {
-            updatedData = item.getState();
-            console.log('getState() result:', updatedData, 'id:', updatedData && updatedData.id);
-          } else if (item) {
-            updatedData = item;
-            console.log('Raw item, id:', item.id, 'keys:', Object.keys(item).slice(0, 10));
-          }
+          updatedData = item && item.getState ? item.getState() : item;
         } else if (payload && payload.records) {
           var record = Object.values(payload.records)[0];
           updatedData = record && record.getState ? record.getState() : record;
-        } else if (payload && typeof payload === 'object' && payload.id) {
+        } else if (payload && typeof payload === 'object') {
           updatedData = payload.getState ? payload.getState() : payload;
         }
-        if (updatedData && updatedData.id) {
-          console.log('Contact updated via subscription, id:', updatedData.id);
-          // Only merge fields that have defined, non-null values —
-          // subscription payloads may contain undefined for unchanged fields
+        // VitalSync subscription payloads may not include 'id' —
+        // we already know the contact ID from the query filter
+        if (updatedData && typeof updatedData === 'object' && Object.keys(updatedData).length > 0) {
+          console.log('Contact updated via subscription');
+          // Only merge fields that have defined, non-null values
           var merged = Object.assign({}, currentContact);
           Object.keys(updatedData).forEach(function (key) {
             if (updatedData[key] !== undefined && updatedData[key] !== null) {
               merged[key] = updatedData[key];
             }
           });
+          // Preserve id from the original contact
+          merged.id = contactId;
           currentContact = merged;
           renderContactDetail(currentContact);
           u.showToast('Contact updated', 'info', 2000);
-        } else {
-          console.log('Subscription payload not matched. updatedData:', updatedData);
         }
       });
 
