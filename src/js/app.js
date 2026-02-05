@@ -7,6 +7,9 @@
   var contacts = [];
   var currentContact = null;
 
+  // Fields for search results table (subset of full model)
+  var SEARCH_FIELDS = ['id', 'email', 'first_name', 'last_name', 'sms_number', 'application_status'];
+
   // Subscription state
   var contactSub = null;
   var contactQuery = null;
@@ -54,7 +57,7 @@
     plugin
       .switchTo(MODELS.Contact.sdkName)
       .query()
-      .select(MODELS.Contact.searchFields)
+      .select(SEARCH_FIELDS)
       .where('email', 'like', searchTerm)
       .orWhere('first_name', 'like', searchTerm)
       .orWhere('last_name', 'like', searchTerm)
