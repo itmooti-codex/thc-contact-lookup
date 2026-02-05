@@ -127,6 +127,16 @@ details summary {
   border-color: rgb(59 130 246);
 }
 
+/* ── Prose (rendered HTML content) ─────────────────────────── */
+.prose p { margin: 0.25em 0; }
+.prose ul, .prose ol { margin: 0.25em 0; padding-left: 1.25em; }
+.prose ul { list-style: disc; }
+.prose ol { list-style: decimal; }
+.prose li { margin: 0.15em 0; }
+.prose b, .prose strong { font-weight: 600; }
+.prose h1, .prose h2, .prose h3, .prose h4 { font-weight: 600; margin: 0.5em 0 0.25em; }
+.prose a { color: #2563eb; text-decoration: underline; }
+
 /* ── Table Styles ──────────────────────────────────────────── */
 #resultsTable table {
   border-collapse: collapse;

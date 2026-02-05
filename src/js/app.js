@@ -348,7 +348,7 @@
       detailRow('AI Consultation', c.ai_consultation ? boolBadge(true, 'Complete') : 'Not done') +
       detailRow('Consultation Date', u.formatDate(c.date_ai_consulation));
     if (c.ai_notes) {
-      aiHtml += longTextRow('AI Notes', c.ai_notes);
+      aiHtml += htmlContentRow('AI Notes', c.ai_notes);
     }
     u.byId('cardAI').innerHTML = aiHtml;
 
@@ -656,6 +656,14 @@
     return '<div class="py-1.5 border-b border-gray-100 last:border-0">' +
       '<span class="text-sm text-gray-500 block mb-0.5">' + label + '</span>' +
       '<p class="text-sm text-gray-900 whitespace-pre-line">' + u.escapeHtml(text) + '</p>' +
+      '</div>';
+  }
+
+  /** Render a row with trusted HTML content (e.g. server-generated AI notes) */
+  function htmlContentRow(label, html) {
+    return '<div class="py-1.5 border-b border-gray-100 last:border-0">' +
+      '<span class="text-sm text-gray-500 block mb-0.5">' + label + '</span>' +
+      '<div class="text-sm text-gray-900 prose prose-sm max-w-none">' + html + '</div>' +
       '</div>';
   }
 
