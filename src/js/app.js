@@ -642,6 +642,11 @@
       });
   }
 
+  // Purchases state — cached for client-side filtering
+  var allPurchases = [];
+  var productNameMap = {};
+  var activePurchaseFilters = { Paid: true };
+
   function loadPurchases(contactId) {
     var container = u.byId('purchasesList');
     container.innerHTML = '<p class="text-sm text-gray-400 py-4">Loading purchases...</p>';
@@ -683,42 +688,116 @@
           : Promise.resolve(null);
 
         return productNamePromise.then(function (productRecords) {
-          // Build product ID → internal name map
-          var productNames = {};
+          productNameMap = {};
           if (productRecords) {
             Object.values(productRecords).forEach(function (prod) {
-              productNames[prod.id] = prod.internal_name || prod.public_name || '';
+              productNameMap[prod.id] = prod.internal_name || prod.public_name || '';
             });
           }
 
           items.sort(function (a, b) { return (b.created_at || 0) - (a.created_at || 0); });
-          container.innerHTML = items.map(function (p) {
-            var displayName = (p.product_id && productNames[p.product_id]) || p.name || 'Purchase #' + p.id;
-            return '<div class="flex items-center justify-between py-3 border-b border-gray-100 last:border-0">' +
-              '<div>' +
-              '<div class="text-sm font-medium text-gray-900">' + u.escapeHtml(displayName) + '</div>' +
-              '<div class="text-xs text-gray-500">' + u.formatDate(p.created_at) +
-              (p.quantity > 1 ? ' &middot; Qty: ' + p.quantity : '') +
-              '</div>' +
-              '</div>' +
-              '<div class="flex items-center gap-3">' +
-              '<span class="text-sm font-semibold text-gray-900">' + u.formatCurrency(p.total_purchase || p.price) + '</span>' +
-              purchaseStatusBadge(p.status) +
-              '</div>' +
-              '</div>';
-          }).join('');
-          u.byId('purchasesCount').textContent = '(' + items.length + ')';
+          allPurchases = items;
 
-          // Total revenue — only include Paid purchases
-          var total = items.reduce(function (sum, p) {
-            return p.status === 'Paid' ? sum + (p.total_purchase || p.price || 0) : sum;
-          }, 0);
-          u.byId('purchasesTotal').textContent = 'Total (Paid): ' + u.formatCurrency(total);
+          // Build filter pills from statuses present in the data
+          renderPurchaseFilters();
+          renderFilteredPurchases();
         });
       })
       .catch(function (err) {
         container.innerHTML = '<p class="text-sm text-red-500 py-4">Failed to load: ' + u.escapeHtml(err.message) + '</p>';
       });
+  }
+
+  function renderPurchaseFilters() {
+    var filtersEl = u.byId('purchaseFilters');
+    // Collect unique statuses with counts
+    var statusCounts = {};
+    allPurchases.forEach(function (p) {
+      var s = p.status || 'Unknown';
+      statusCounts[s] = (statusCounts[s] || 0) + 1;
+    });
+
+    // Preferred display order
+    var order = ['Paid', 'Pending', 'Collections', 'Declined', 'Refunded', 'Voided', 'Written Off'];
+    var statuses = order.filter(function (s) { return statusCounts[s]; });
+    // Add any statuses not in the predefined order
+    Object.keys(statusCounts).forEach(function (s) {
+      if (statuses.indexOf(s) === -1) statuses.push(s);
+    });
+
+    if (statuses.length <= 1) {
+      filtersEl.classList.add('hidden');
+      // If only one status, show all
+      activePurchaseFilters = {};
+      statuses.forEach(function (s) { activePurchaseFilters[s] = true; });
+      return;
+    }
+
+    filtersEl.classList.remove('hidden');
+    filtersEl.innerHTML = statuses.map(function (s) {
+      var active = !!activePurchaseFilters[s];
+      var count = statusCounts[s];
+      return '<button data-status="' + u.escapeHtml(s) + '" class="purchase-filter-pill px-3 py-1 text-xs font-medium rounded-full border transition-colors ' +
+        (active
+          ? 'bg-gray-900 text-white border-gray-900'
+          : 'bg-white text-gray-600 border-gray-300 hover:border-gray-400') +
+        '">' + u.escapeHtml(s) + ' (' + count + ')</button>';
+    }).join('');
+
+    // Wire up click handlers
+    filtersEl.querySelectorAll('.purchase-filter-pill').forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        var status = btn.getAttribute('data-status');
+        if (activePurchaseFilters[status]) {
+          delete activePurchaseFilters[status];
+        } else {
+          activePurchaseFilters[status] = true;
+        }
+        // If nothing selected, select all
+        if (Object.keys(activePurchaseFilters).length === 0) {
+          statuses.forEach(function (s) { activePurchaseFilters[s] = true; });
+        }
+        renderPurchaseFilters();
+        renderFilteredPurchases();
+      });
+    });
+  }
+
+  function renderFilteredPurchases() {
+    var container = u.byId('purchasesList');
+    var filtered = allPurchases.filter(function (p) {
+      return activePurchaseFilters[p.status || 'Unknown'];
+    });
+
+    if (filtered.length === 0) {
+      container.innerHTML = '<p class="text-sm text-gray-400 py-4 text-center">No purchases match selected filters</p>';
+      u.byId('purchasesCount').textContent = '(0)';
+      u.byId('purchasesTotal').textContent = '';
+      return;
+    }
+
+    container.innerHTML = filtered.map(function (p) {
+      var displayName = (p.product_id && productNameMap[p.product_id]) || p.name || 'Purchase #' + p.id;
+      return '<div class="flex items-center justify-between py-3 border-b border-gray-100 last:border-0">' +
+        '<div>' +
+        '<div class="text-sm font-medium text-gray-900">' + u.escapeHtml(displayName) + '</div>' +
+        '<div class="text-xs text-gray-500">' + u.formatDate(p.created_at) +
+        (p.quantity > 1 ? ' &middot; Qty: ' + p.quantity : '') +
+        '</div>' +
+        '</div>' +
+        '<div class="flex items-center gap-3">' +
+        '<span class="text-sm font-semibold text-gray-900">' + u.formatCurrency(p.total_purchase || p.price) + '</span>' +
+        purchaseStatusBadge(p.status) +
+        '</div>' +
+        '</div>';
+    }).join('');
+
+    u.byId('purchasesCount').textContent = '(' + filtered.length + ')';
+
+    var total = filtered.reduce(function (sum, p) {
+      return sum + (p.total_purchase || p.price || 0);
+    }, 0);
+    u.byId('purchasesTotal').textContent = 'Total: ' + u.formatCurrency(total);
   }
 
   function loadDispenses(contactId) {
